@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Apply for OT - OT Management System</title>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="navbar-container">
+      <div class="navbar-brand">
+        📊 OT Management System
+      </div>
+      <ul class="navbar-nav">
+        <li><a href="?page=dashboard" class="nav-link">Dashboard</a></li>
+        <li><a href="?page=apply" class="nav-link active">Apply OT</a></li>
+        <li><a href="?page=history" class="nav-link">History</a></li>
+      </ul>
+      <div style="color: white;">
+        👤 <?= userData.staffName ?>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="container">
+    <div class="card">
+      <div class="card-header">
+        <span>📝 Apply for Overtime</span>
+        <a href="?page=dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+      </div>
+      <div class="card-body">
+        <!-- Success Message -->
+        <div id="successMessage" class="hidden"></div>
+        
+        <!-- Error Message -->
+        <div id="errorMessage" class="hidden"></div>
+        
+        <!-- Warning Message -->
+        <div id="warningMessage" class="hidden"></div>
+
+        <!-- Application Form -->
+        <form id="otApplicationForm">
+          <!-- OT Date -->
+          <div class="form-group">
+            <label for="otDate" class="form-label required">OT Date</label>
+            <input 
+              type="date" 
+              id="otDate" 
+              name="otDate" 
+              class="form-control" 
+              required
+              onchange="checkPublicHoliday()">
+            <div class="form-text">Select the date you worked overtime</div>
+            <div id="holidayNotice" class="hidden" style="margin-top: 0.5rem;"></div>
+          </div>
+
+          <!-- Start Time -->
+          <div class="form-group">
+            <label for="startTime" class="form-label required">Start Time</label>
+            <input 
+              type="time" 
+              id="startTime" 
+              name="startTime" 
+              class="form-control" 
+              required
+              onchange="calculateHours()">
+            <div class="form-text">When did your OT start?</div>
+          </div>
+
+          <!-- End Time -->
+          <div class="form-group">
+            <label for="endTime" class="form-label required">End Time</label>
+            <input 
+              type="time" 
+              id="endTime" 
+              name="endTime" 
+              class="form-control" 
+              required
+              onchange="calculateHours()">
+            <div class="form-text">When did your OT end?</div>
+          </div>
+
+          <!-- Hours Calculated (Read-only Display) -->
+          <div class="form-group">
+            <label class="form-label">Calculated OT Hours</label>
+            <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; border: 1px solid #ddd;">
+              <div style="font-size: 1.5rem; font-weight: bold; color: #4285F4;">
+                <span id="calculatedHours">0</span> hours
+                <span id="multiplierBadge" class="hidden" style="font-size: 1rem; color: #9C27B0;">× 2 (Public Holiday)</span>
+              </div>
+              <div style="font-size: 0.875rem; color: #666; margin-top: 0.5rem;" id="hoursBreakdown">
+                <!-- Populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Claim Type -->
+          <div class="form-group">
+            <label for="claimType" class="form-label required">Claim As</label>
+            <select id="claimType" name="claimType" class="form-control" required onchange="updateLeaveDisplay()">
+              <option value="">-- Select Claim Type --</option>
+              <option value="Money">Money</option>
+              <option value="Leave">Leave Days</option>
+            </select>
+            <div class="form-text">Choose how you want to claim this OT</div>
+            <div id="leaveConversion" class="hidden" style="margin-top: 0.5rem; padding: 0.75rem; background: #E8F5E9; border-radius: 4px;">
+              <strong>Leave Days:</strong> <span id="leaveDaysCalculated">0</span> days
+              <div style="font-size: 0.875rem; color: #666; margin-top: 0.25rem;">
+                (6 OT hours = 1 leave day)
+              </div>
+            </div>
+          </div>
+
+          <!-- Proof Upload (Placeholder) -->
+          <div class="form-group">
+            <label for="proofNotes" class="form-label">Attendance Proof / Notes</label>
+            <textarea 
+              id="proofNotes" 
+              name="proofNotes" 
+              class="form-control" 
+              rows="3"
+              placeholder="Add any notes or proof of attendance here..."></textarea>
+            <div class="form-text">Optional: Add notes about this OT session</div>
+          </div>
+
+          <!-- Validation Summary -->
+          <div id="validationSummary" class="hidden" style="margin-bottom: 1.5rem;">
+            <!-- Populated by JavaScript -->
+          </div>
+
+          <!-- Submit Buttons -->
+          <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+            <button type="button" class="btn btn-secondary" onclick="saveDraft()">
+              Save as Draft
+            </button>
+            <button type="button" class="btn btn-primary" id="submitBtn" onclick="validateAndSubmit()">
+              ✓ Submit Application
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- OT Limit Warning -->
+    <div class="card" style="background: #FFF3CD;">
+      <div class="card-header" style="border-bottom-color: #FFC107;">
+        ⚠️ Current Month OT Status
+      </div>
+      <div class="card-body">
+        <div id="limitInfo">
+          <p>Loading OT limit information...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('Scripts'); ?>
+
+  <script>
+    let isPublicHoliday = false;
+    let currentLimitData = null;
+
+    // Load limit info on page load
+    window.onload = function() {
+      loadLimitInfo();
+      setDefaultDate();
+    };
+
+    function setDefaultDate() {
+      // Set default date to today
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('otDate').value = today;
+      checkPublicHoliday();
+    }
+
+    function loadLimitInfo() {
+      google.script.run
+        .withSuccessHandler(onLimitLoaded)
+        .withFailureHandler(handleApiError)
+        .apiGetStaffDashboard();
+    }
+
+    function onLimitLoaded(data) {
+      if (!data.success) return;
+
+      currentLimitData = data.limits;
+      const html = `
+        <div class="grid grid-2" style="gap: 1rem;">
+          <div>
+            <strong>Total OT This Month:</strong><br>
+            ${data.summary.totalOTHours || 0} / ${APP_CONFIG.maxOTHours} hours
+          </div>
+          <div>
+            <strong>Remaining:</strong><br>
+            ${currentLimitData.remainingHours} hours
+          </div>
+        </div>
+        <div class="progress mt-2">
+          <div class="progress-bar ${getProgressClass(calculateProgress(data.summary.totalOTHours, APP_CONFIG.maxOTHours))}" 
+               style="width: ${calculateProgress(data.summary.totalOTHours || 0, APP_CONFIG.maxOTHours)}%">
+            ${Math.round(calculateProgress(data.summary.totalOTHours || 0, APP_CONFIG.maxOTHours))}%
+          </div>
+        </div>
+      `;
+      document.getElementById('limitInfo').innerHTML = html;
+    }
+
+    function checkPublicHoliday() {
+      const dateInput = document.getElementById('otDate');
+      if (!dateInput.value) return;
+
+      google.script.run
+        .withSuccessHandler(onHolidayChecked)
+        .withFailureHandler(handleApiError)
+        .apiCheckPublicHoliday(dateInput.value);
+    }
+
+    function onHolidayChecked(data) {
+      if (!data.success) return;
+
+      isPublicHoliday = data.isHoliday;
+      const notice = document.getElementById('holidayNotice');
+
+      if (isPublicHoliday) {
+        notice.innerHTML = `
+          <div class="alert alert-info">
+            🎉 <strong>Public Holiday:</strong> ${data.details.name}<br>
+            OT hours will be counted at <strong>2x multiplier</strong>
+          </div>
+        `;
+        notice.classList.remove('hidden');
+      } else {
+        notice.classList.add('hidden');
+      }
+
+      calculateHours();
+    }
+
+    function calculateHours() {
+      const startTime = document.getElementById('startTime').value;
+      const endTime = document.getElementById('endTime').value;
+
+      if (!startTime || !endTime) return;
+
+      const baseHours = calculateDuration(startTime, endTime);
+      const multiplier = isPublicHoliday ? 2 : 1;
+      const totalHours = (baseHours * multiplier).toFixed(2);
+
+      document.getElementById('calculatedHours').textContent = totalHours;
+
+      if (isPublicHoliday) {
+        document.getElementById('multiplierBadge').classList.remove('hidden');
+        document.getElementById('hoursBreakdown').innerHTML = 
+          `Base: ${baseHours}h × 2 (Public Holiday) = <strong>${totalHours}h</strong>`;
+      } else {
+        document.getElementById('multiplierBadge').classList.add('hidden');
+        document.getElementById('hoursBreakdown').innerHTML = 
+          `${baseHours} hours of regular OT`;
+      }
+
+      updateLeaveDisplay();
+      checkLimitWarning(totalHours);
+    }
+
+    function updateLeaveDisplay() {
+      const claimType = document.getElementById('claimType').value;
+      const leaveDiv = document.getElementById('leaveConversion');
+      const totalHours = parseFloat(document.getElementById('calculatedHours').textContent);
+
+      if (claimType === 'Leave' && totalHours > 0) {
+        const leaveDays = (totalHours / APP_CONFIG.hoursPerLeaveDay).toFixed(2);
+        document.getElementById('leaveDaysCalculated').textContent = leaveDays;
+        leaveDiv.classList.remove('hidden');
+      } else {
+        leaveDiv.classList.add('hidden');
+      }
+    }
+
+    function checkLimitWarning(additionalHours) {
+      if (!currentLimitData) return;
+
+      const projected = (currentLimitData.currentHours || 0) + parseFloat(additionalHours);
+      const validationDiv = document.getElementById('validationSummary');
+
+      if (projected > APP_CONFIG.maxOTHours) {
+        validationDiv.innerHTML = `
+          <div class="alert alert-danger">
+            ❌ <strong>Cannot Submit:</strong> This would exceed the monthly limit of ${APP_CONFIG.maxOTHours} hours.<br>
+            Current: ${currentLimitData.currentHours}h + Requested: ${additionalHours}h = ${projected}h
+          </div>
+        `;
+        validationDiv.classList.remove('hidden');
+        document.getElementById('submitBtn').disabled = true;
+      } else if (projected >= APP_CONFIG.warningThreshold) {
+        validationDiv.innerHTML = `
+          <div class="alert alert-warning">
+            ⚠️ <strong>Warning:</strong> Approaching monthly limit.<br>
+            Current: ${currentLimitData.currentHours}h + Requested: ${additionalHours}h = ${projected}/${APP_CONFIG.maxOTHours}h
+          </div>
+        `;
+        validationDiv.classList.remove('hidden');
+        document.getElementById('submitBtn').disabled = false;
+      } else {
+        validationDiv.classList.add('hidden');
+        document.getElementById('submitBtn').disabled = false;
+      }
+    }
+
+    function validateAndSubmit() {
+      // Clear messages
+      document.getElementById('successMessage').classList.add('hidden');
+      document.getElementById('errorMessage').classList.add('hidden');
+      document.getElementById('warningMessage').classList.add('hidden');
+
+      // Validate form
+      if (!validateForm('otApplicationForm')) {
+        document.getElementById('errorMessage').innerHTML = showError('Please fill in all required fields');
+        document.getElementById('errorMessage').classList.remove('hidden');
+        return;
+      }
+
+      // Collect form data
+      const formData = {
+        otDate: document.getElementById('otDate').value,
+        startTime: document.getElementById('startTime').value + ':00',
+        endTime: document.getElementById('endTime').value + ':00',
+        claimType: document.getElementById('claimType').value
+      };
+
+      // Disable button
+      disableButton('submitBtn');
+
+      // Submit via API
+      google.script.run
+        .withSuccessHandler(onSubmitSuccess)
+        .withFailureHandler(onSubmitError)
+        .apiSubmitOTApplication(formData);
+    }
+
+    function onSubmitSuccess(result) {
+      enableButton('submitBtn', '✓ Submit Application');
+
+      if (!result.success) {
+        document.getElementById('errorMessage').innerHTML = showError(result.message);
+        document.getElementById('errorMessage').classList.remove('hidden');
+        return;
+      }
+
+      // Show success message
+      let successHtml = `
+        <div class="alert alert-success">
+          <strong>✓ Success!</strong> Your OT application has been submitted.<br>
+          <strong>Application ID:</strong> ${result.applicationId}<br>
+          <strong>OT Hours:</strong> ${result.data.totalHours} hours<br>
+          <strong>Status:</strong> ${getStatusBadge(result.data.status)}
+        </div>
+      `;
+
+      // Show warnings if any
+      if (result.warnings && result.warnings.length > 0) {
+        successHtml += `
+          <div class="alert alert-warning mt-2">
+            <strong>⚠️ Warnings:</strong><br>
+            ${result.warnings.map(w => `• ${w}`).join('<br>')}
+          </div>
+        `;
+      }
+
+      document.getElementById('successMessage').innerHTML = successHtml;
+      document.getElementById('successMessage').classList.remove('hidden');
+
+      // Reset form
+      document.getElementById('otApplicationForm').reset();
+      document.getElementById('calculatedHours').textContent = '0';
+      setDefaultDate();
+
+      // Scroll to top
+      window.scrollTo(0, 0);
+
+      // Reload limit info
+      loadLimitInfo();
+    }
+
+    function onSubmitError(error) {
+      enableButton('submitBtn', '✓ Submit Application');
+      document.getElementById('errorMessage').innerHTML = showError(error.message || 'Failed to submit application');
+      document.getElementById('errorMessage').classList.remove('hidden');
+    }
+
+    function saveDraft() {
+      showToast('Draft saving feature coming soon!', 'info');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Team Summary - OT Management System</title>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="navbar-container">
+      <div class="navbar-brand">
+        📊 OT Management System - Team Leader
+      </div>
+      <ul class="navbar-nav">
+        <li><a href="?page=tl-dashboard" class="nav-link">Dashboard</a></li>
+        <li><a href="?page=approval-queue" class="nav-link">
+          Approval Queue
+          <span id="pendingBadge" class="badge" style="background: #F44336; margin-left: 0.25rem;">0</span>
+        </a></li>
+        <li><a href="?page=team-summary" class="nav-link active">Team Summary</a></li>
+      </ul>
+      <div style="color: white;">
+        👤 <?= userData.staffName ?>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Header -->
+    <div class="card">
+      <div class="card-header">
+        <span>👥 Team OT Summary</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="loadTeamSummary()">🔄 Refresh</button>
+          <button class="btn btn-secondary" onclick="exportToCSV()">📥 Export CSV</button>
+          <a href="?page=tl-dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="grid grid-4">
+          <div class="stat-card" style="background: linear-gradient(135deg, #2196F3 0%, #4285F4 100%); color: white;">
+            <div class="stat-value" id="teamTotalOT">0h</div>
+            <div class="stat-label">Team Total OT</div>
+            <div class="stat-change">This Month</div>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #4CAF50 0%, #8BC34A 100%); color: white;">
+            <div class="stat-value" id="avgOT">0h</div>
+            <div class="stat-label">Average per Staff</div>
+            <div class="stat-change">This Month</div>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #FF9800 0%, #FFC107 100%); color: white;">
+            <div class="stat-value" id="approachingLimit">0</div>
+            <div class="stat-label">Approaching Limit</div>
+            <div class="stat-change">≥ 90h</div>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%); color: white;">
+            <div class="stat-value" id="teamSize">0</div>
+            <div class="stat-label">Team Members</div>
+            <div class="stat-change">Active</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Month Filter -->
+    <div class="card">
+      <div class="card-body">
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="monthFilter" class="form-label">Select Month</label>
+            <input type="month" id="monthFilter" class="form-control" onchange="loadTeamSummary()">
+          </div>
+          <div class="form-group">
+            <label for="sortBy" class="form-label">Sort By</label>
+            <select id="sortBy" class="form-control" onchange="sortTeamMembers()">
+              <option value="name">Staff Name</option>
+              <option value="ot-desc">OT Hours (High to Low)</option>
+              <option value="ot-asc">OT Hours (Low to High)</option>
+              <option value="progress">Limit Progress</option>
+              <option value="pending">Pending Count</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Team Members Table -->
+    <div class="card">
+      <div class="card-header">
+        <span id="tableTitle">Team Members OT Summary</span>
+      </div>
+      <div class="card-body">
+        <div id="teamMembersList">
+          <p style="text-align: center; color: #666;">Loading team summary...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Member Details Modal -->
+  <div id="memberModal" class="modal">
+    <div class="modal-content" style="max-width: 800px;">
+      <div class="modal-header">
+        <h3 id="memberName">Staff Details</h3>
+        <span class="modal-close" onclick="hideModal('memberModal')">&times;</span>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Content populated by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="hideModal('memberModal')">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('Scripts'); ?>
+
+  <script>
+    let teamMembers = [];
+    let selectedMonth = '';
+
+    // Load on page load
+    window.onload = function() {
+      setDefaultMonth();
+      loadTeamSummary();
+    };
+
+    function setDefaultMonth() {
+      const today = new Date();
+      const monthValue = today.toISOString().substring(0, 7);
+      document.getElementById('monthFilter').value = monthValue;
+      selectedMonth = monthValue;
+    }
+
+    function loadTeamSummary() {
+      selectedMonth = document.getElementById('monthFilter').value;
+      showLoading();
+      google.script.run
+        .withSuccessHandler(onTeamSummaryLoaded)
+        .withFailureHandler(handleApiError)
+        .apiGetTeamLeaderDashboard();
+    }
+
+    function onTeamSummaryLoaded(result) {
+      if (!result.success) {
+        showError(result.message);
+        return;
+      }
+
+      teamMembers = result.teamMembers || [];
+
+      // Update stats
+      updateStats();
+
+      // Render team members
+      sortTeamMembers();
+
+      // Update pending badge
+      document.getElementById('pendingBadge').textContent = result.pendingCount || 0;
+    }
+
+    function updateStats() {
+      const totalOT = teamMembers.reduce((sum, m) => sum + (m.totalOT || 0), 0);
+      const avgOT = teamMembers.length > 0 ? (totalOT / teamMembers.length).toFixed(1) : 0;
+      const approachingLimit = teamMembers.filter(m => (m.totalOT || 0) >= APP_CONFIG.warningThreshold).length;
+
+      document.getElementById('teamTotalOT').textContent = totalOT + 'h';
+      document.getElementById('avgOT').textContent = avgOT + 'h';
+      document.getElementById('approachingLimit').textContent = approachingLimit;
+      document.getElementById('teamSize').textContent = teamMembers.length;
+    }
+
+    function sortTeamMembers() {
+      const sortBy = document.getElementById('sortBy').value;
+      let sorted = [...teamMembers];
+
+      switch(sortBy) {
+        case 'name':
+          sorted.sort((a, b) => a.staffName.localeCompare(b.staffName));
+          break;
+        case 'ot-desc':
+          sorted.sort((a, b) => (b.totalOT || 0) - (a.totalOT || 0));
+          break;
+        case 'ot-asc':
+          sorted.sort((a, b) => (a.totalOT || 0) - (b.totalOT || 0));
+          break;
+        case 'progress':
+          sorted.sort((a, b) => {
+            const progressA = calculateProgress(a.totalOT || 0, APP_CONFIG.maxOTHours);
+            const progressB = calculateProgress(b.totalOT || 0, APP_CONFIG.maxOTHours);
+            return progressB - progressA;
+          });
+          break;
+        case 'pending':
+          sorted.sort((a, b) => (b.pendingCount || 0) - (a.pendingCount || 0));
+          break;
+      }
+
+      renderTeamMembers(sorted);
+    }
+
+    function renderTeamMembers(members) {
+      const container = document.getElementById('teamMembersList');
+
+      if (members.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 3rem; color: #666;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">👥</div>
+            <h3>No Team Members Found</h3>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Staff</th>
+              <th>Total OT</th>
+              <th>Limit Status</th>
+              <th>Applications</th>
+              <th>Money Claim</th>
+              <th>Leave Days</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      members.forEach(member => {
+        const progress = calculateProgress(member.totalOT || 0, APP_CONFIG.maxOTHours);
+        const progressClass = getProgressClass(progress);
+        const statusColor = progress >= 90 ? '#F44336' : progress >= 70 ? '#FF9800' : '#4CAF50';
+
+        html += `
+          <tr>
+            <td>
+              <strong>${member.staffName}</strong><br>
+              <span style="font-size: 0.875rem; color: #666;">${member.staffId}</span><br>
+              <span style="font-size: 0.875rem; color: #999;">${member.teamName || ''}</span>
+            </td>
+            <td>
+              <div style="font-size: 1.5rem; font-weight: bold; color: ${statusColor};">
+                ${member.totalOT || 0}h
+              </div>
+              <div style="font-size: 0.875rem; color: #666;">
+                of ${APP_CONFIG.maxOTHours}h
+              </div>
+            </td>
+            <td>
+              <div class="progress" style="height: 24px; min-width: 150px;">
+                <div class="progress-bar ${progressClass}" style="width: ${progress}%">
+                  ${Math.round(progress)}%
+                </div>
+              </div>
+              <div style="font-size: 0.875rem; color: #666; margin-top: 0.25rem;">
+                ${APP_CONFIG.maxOTHours - (member.totalOT || 0)}h remaining
+              </div>
+            </td>
+            <td>
+              <div class="grid grid-3" style="gap: 0.5rem;">
+                <div>
+                  <span class="badge" style="background: #FF9800;">${member.pendingCount || 0}</span>
+                  <div style="font-size: 0.75rem; color: #666;">Pending</div>
+                </div>
+                <div>
+                  <span class="badge badge-success">${member.approvedCount || 0}</span>
+                  <div style="font-size: 0.75rem; color: #666;">Approved</div>
+                </div>
+                <div>
+                  <span class="badge badge-danger">${member.rejectedCount || 0}</span>
+                  <div style="font-size: 0.75rem; color: #666;">Rejected</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <strong>RM ${(member.moneyClaim || 0).toFixed(2)}</strong>
+            </td>
+            <td>
+              <strong>${(member.leaveDays || 0).toFixed(1)}</strong> days
+            </td>
+            <td>
+              <button class="btn btn-sm btn-primary" onclick="viewMemberDetails('${member.staffId}')">
+                View Details
+              </button>
+            </td>
+          </tr>
+        `;
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+      document.getElementById('tableTitle').textContent = 
+        `${members.length} Team Member${members.length !== 1 ? 's' : ''} - ${selectedMonth}`;
+    }
+
+    function viewMemberDetails(staffId) {
+      const member = teamMembers.find(m => m.staffId === staffId);
+      if (!member) return;
+
+      const progress = calculateProgress(member.totalOT || 0, APP_CONFIG.maxOTHours);
+      const progressClass = getProgressClass(progress);
+
+      let modalHtml = `
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Staff ID</label>
+            <div><strong>${member.staffId}</strong></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Staff Name</label>
+            <div><strong>${member.staffName}</strong></div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Team</label>
+            <div>${member.teamName || 'N/A'}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Month</label>
+            <div>${selectedMonth}</div>
+          </div>
+        </div>
+
+        <hr>
+
+        <div class="form-group">
+          <label class="form-label">Total OT Hours</label>
+          <div style="background: #F5F5F5; padding: 1rem; border-radius: 4px;">
+            <div style="font-size: 2rem; font-weight: bold; color: #4285F4; margin-bottom: 0.5rem;">
+              ${member.totalOT || 0} hours
+            </div>
+            <div class="progress" style="height: 30px;">
+              <div class="progress-bar ${progressClass}" style="width: ${progress}%">
+                ${Math.round(progress)}%
+              </div>
+            </div>
+            <div style="margin-top: 0.5rem; color: #666;">
+              ${member.totalOT || 0} / ${APP_CONFIG.maxOTHours} hours (${APP_CONFIG.maxOTHours - (member.totalOT || 0)}h remaining)
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label class="form-label">Pending</label>
+            <div><span class="badge" style="background: #FF9800; font-size: 1.25rem;">${member.pendingCount || 0}</span></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Approved</label>
+            <div><span class="badge badge-success" style="font-size: 1.25rem;">${member.approvedCount || 0}</span></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rejected</label>
+            <div><span class="badge badge-danger" style="font-size: 1.25rem;">${member.rejectedCount || 0}</span></div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Money Claim</label>
+            <div style="font-size: 1.5rem; font-weight: bold; color: #4CAF50;">
+              RM ${(member.moneyClaim || 0).toFixed(2)}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Leave Days</label>
+            <div style="font-size: 1.5rem; font-weight: bold; color: #2196F3;">
+              ${(member.leaveDays || 0).toFixed(1)} days
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (progress >= 90) {
+        modalHtml += `
+          <div class="alert alert-warning">
+            <strong>⚠️ Warning:</strong> This staff member is approaching or has exceeded the monthly OT limit.
+          </div>
+        `;
+      }
+
+      document.getElementById('memberName').textContent = member.staffName;
+      document.getElementById('modalBody').innerHTML = modalHtml;
+      showModal('memberModal');
+    }
+
+    function exportToCSV() {
+      const csvData = teamMembers.map(m => ({
+        'Staff ID': m.staffId,
+        'Staff Name': m.staffName,
+        'Team': m.teamName || '',
+        'Total OT (h)': m.totalOT || 0,
+        'Progress (%)': Math.round(calculateProgress(m.totalOT || 0, APP_CONFIG.maxOTHours)),
+        'Pending': m.pendingCount || 0,
+        'Approved': m.approvedCount || 0,
+        'Rejected': m.rejectedCount || 0,
+        'Money Claim (RM)': (m.moneyClaim || 0).toFixed(2),
+        'Leave Days': (m.leaveDays || 0).toFixed(1)
+      }));
+
+      exportTableToCSV(csvData, `team-summary-${selectedMonth}`);
+    }
+  </script>
+</body>
+</html>

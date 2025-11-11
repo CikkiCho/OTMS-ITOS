@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Approval Queue - OT Management System</title>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="navbar-container">
+      <div class="navbar-brand">
+        📊 OT Management System - Team Leader
+      </div>
+      <ul class="navbar-nav">
+        <li><a href="?page=tl-dashboard" class="nav-link">Dashboard</a></li>
+        <li><a href="?page=approval-queue" class="nav-link active">
+          Approval Queue
+          <span id="pendingBadge" class="badge" style="background: #F44336; margin-left: 0.25rem;">0</span>
+        </a></li>
+        <li><a href="?page=team-summary" class="nav-link">Team Summary</a></li>
+      </ul>
+      <div style="color: white;">
+        👤 <?= userData.staffName ?>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Header -->
+    <div class="card">
+      <div class="card-header">
+        <span>⏳ Pending Approvals</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="loadApplications()">🔄 Refresh</button>
+          <a href="?page=tl-dashboard" class="btn btn-secondary">← Back to Dashboard</a>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="grid grid-3">
+          <div class="stat-card" style="background: linear-gradient(135deg, #F44336 0%, #E91E63 100%); color: white;">
+            <div class="stat-value" id="pendingCount">0</div>
+            <div class="stat-label">Pending Applications</div>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #FF9800 0%, #FFC107 100%); color: white;">
+            <div class="stat-value" id="warningCount">0</div>
+            <div class="stat-label">With Warnings</div>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%); color: white;">
+            <div class="stat-value" id="holidayCount">0</div>
+            <div class="stat-label">Public Holiday OT</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card">
+      <div class="card-body">
+        <div class="grid grid-3">
+          <div class="form-group">
+            <label for="filterStaff" class="form-label">Filter by Staff</label>
+            <select id="filterStaff" class="form-control" onchange="applyFilters()">
+              <option value="">All Staff</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="filterMonth" class="form-label">Filter by Month</label>
+            <input type="month" id="filterMonth" class="form-control" onchange="applyFilters()">
+          </div>
+          <div class="form-group">
+            <label for="filterWarning" class="form-label">Filter by Warning</label>
+            <select id="filterWarning" class="form-control" onchange="applyFilters()">
+              <option value="">All Applications</option>
+              <option value="warning">With Warnings</option>
+              <option value="no-warning">No Warnings</option>
+            </select>
+          </div>
+        </div>
+        <div style="text-align: right; margin-top: 1rem;">
+          <button class="btn btn-secondary" onclick="clearFilters()">Clear Filters</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Applications List -->
+    <div class="card">
+      <div class="card-header">
+        <span id="listTitle">All Pending Applications</span>
+        <div style="display: flex; gap: 0.5rem;">
+          <button class="btn btn-secondary" onclick="exportToCSV()">📥 Export CSV</button>
+          <button class="btn btn-success" onclick="bulkApprove()" id="bulkApproveBtn" disabled>
+            ✓ Approve Selected (<span id="selectedCount">0</span>)
+          </button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="applicationsList">
+          <p style="text-align: center; color: #666;">Loading applications...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Review Modal -->
+  <div id="reviewModal" class="modal">
+    <div class="modal-content" style="max-width: 700px;">
+      <div class="modal-header">
+        <h3>Review Application</h3>
+        <span class="modal-close" onclick="hideModal('reviewModal')">&times;</span>
+      </div>
+      <div class="modal-body" id="modalBody">
+        <!-- Content populated by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="hideModal('reviewModal')">Cancel</button>
+        <button class="btn btn-danger" onclick="rejectApplication()">✗ Reject</button>
+        <button class="btn btn-success" onclick="approveApplication()">✓ Approve</button>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('Scripts'); ?>
+
+  <script>
+    let allApplications = [];
+    let filteredApplications = [];
+    let selectedApplications = new Set();
+    let currentApplication = null;
+
+    // Load on page load
+    window.onload = function() {
+      loadApplications();
+      setDefaultMonth();
+    };
+
+    function setDefaultMonth() {
+      const today = new Date();
+      const monthValue = today.toISOString().substring(0, 7);
+      document.getElementById('filterMonth').value = monthValue;
+    }
+
+    function loadApplications() {
+      showLoading();
+      google.script.run
+        .withSuccessHandler(onApplicationsLoaded)
+        .withFailureHandler(handleApiError)
+        .apiGetPendingApplications();
+    }
+
+    function onApplicationsLoaded(result) {
+      if (!result.success) {
+        showError(result.message);
+        return;
+      }
+
+      allApplications = result.data || [];
+      filteredApplications = [...allApplications];
+
+      // Update stats
+      updateStats();
+
+      // Populate staff filter
+      populateStaffFilter();
+
+      // Render list
+      applyFilters();
+    }
+
+    function updateStats() {
+      const warningCount = allApplications.filter(app => hasWarnings(app)).length;
+      const holidayCount = allApplications.filter(app => app.isPublicHoliday).length;
+
+      document.getElementById('pendingCount').textContent = allApplications.length;
+      document.getElementById('pendingBadge').textContent = allApplications.length;
+      document.getElementById('warningCount').textContent = warningCount;
+      document.getElementById('holidayCount').textContent = holidayCount;
+    }
+
+    function populateStaffFilter() {
+      const staffSelect = document.getElementById('filterStaff');
+      const uniqueStaff = [...new Set(allApplications.map(app => app.staffId))];
+      
+      staffSelect.innerHTML = '<option value="">All Staff</option>';
+      uniqueStaff.forEach(staffId => {
+        const app = allApplications.find(a => a.staffId === staffId);
+        const option = document.createElement('option');
+        option.value = staffId;
+        option.textContent = `${app.staffName} (${staffId})`;
+        staffSelect.appendChild(option);
+      });
+    }
+
+    function applyFilters() {
+      const staffFilter = document.getElementById('filterStaff').value;
+      const monthFilter = document.getElementById('filterMonth').value;
+      const warningFilter = document.getElementById('filterWarning').value;
+
+      filteredApplications = allApplications.filter(app => {
+        // Staff filter
+        if (staffFilter && app.staffId !== staffFilter) return false;
+
+        // Month filter
+        if (monthFilter) {
+          const appMonth = app.otDate.substring(0, 7);
+          if (appMonth !== monthFilter) return false;
+        }
+
+        // Warning filter
+        if (warningFilter === 'warning' && !hasWarnings(app)) return false;
+        if (warningFilter === 'no-warning' && hasWarnings(app)) return false;
+
+        return true;
+      });
+
+      renderApplicationsList();
+    }
+
+    function clearFilters() {
+      document.getElementById('filterStaff').value = '';
+      document.getElementById('filterMonth').value = '';
+      document.getElementById('filterWarning').value = '';
+      setDefaultMonth();
+      applyFilters();
+    }
+
+    function renderApplicationsList() {
+      const container = document.getElementById('applicationsList');
+
+      if (filteredApplications.length === 0) {
+        container.innerHTML = `
+          <div style="text-align: center; padding: 3rem; color: #666;">
+            <div style="font-size: 3rem; margin-bottom: 1rem;">✓</div>
+            <h3>No Pending Applications</h3>
+            <p>All caught up! No applications require approval.</p>
+          </div>
+        `;
+        return;
+      }
+
+      // Sort by date (oldest first)
+      const sorted = [...filteredApplications].sort((a, b) => 
+        new Date(a.createdDate) - new Date(b.createdDate)
+      );
+
+      let html = `
+        <div style="margin-bottom: 1rem;">
+          <label>
+            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+            <strong>Select All</strong>
+          </label>
+        </div>
+        <table class="table">
+          <thead>
+            <tr>
+              <th width="40">
+                <input type="checkbox" style="display: none;">
+              </th>
+              <th>Staff</th>
+              <th>OT Date</th>
+              <th>Time</th>
+              <th>Hours</th>
+              <th>Claim</th>
+              <th>Monthly Total</th>
+              <th>Submitted</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      sorted.forEach(app => {
+        const warnings = getWarnings(app);
+        const hasWarning = warnings.length > 0;
+        const rowClass = hasWarning ? 'row-warning' : '';
+
+        html += `
+          <tr class="${rowClass}">
+            <td>
+              <input type="checkbox" 
+                     class="app-checkbox" 
+                     data-id="${app.applicationId}"
+                     ${hasWarning ? 'disabled' : ''}
+                     onchange="updateSelection()">
+            </td>
+            <td>
+              <strong>${app.staffName}</strong><br>
+              <span style="font-size: 0.875rem; color: #666;">${app.staffId}</span>
+            </td>
+            <td>
+              ${formatDate(app.otDate)}
+              ${app.isPublicHoliday ? '<br><span class="badge" style="background: #9C27B0;">⭐ PH</span>' : ''}
+            </td>
+            <td style="font-size: 0.875rem;">
+              ${formatTime(app.startTime)}<br>- ${formatTime(app.endTime)}
+            </td>
+            <td>
+              <strong style="font-size: 1.1rem;">${app.totalOTHours}h</strong>
+              ${app.isPublicHoliday ? '<br><span style="font-size: 0.875rem; color: #9C27B0;">×2</span>' : ''}
+            </td>
+            <td>${app.claimType}</td>
+            <td>
+              ${app.currentMonthOT || 0}h<br>
+              <small style="color: #666;">→ ${(app.currentMonthOT || 0) + app.totalOTHours}h</small>
+            </td>
+            <td style="font-size: 0.875rem;">${formatDateTime(app.createdDate)}</td>
+            <td>
+              <button class="btn btn-sm btn-primary" onclick="viewApplication('${app.applicationId}')">
+                ${hasWarning ? '⚠️' : ''} Review
+              </button>
+            </td>
+          </tr>
+        `;
+
+        if (hasWarning) {
+          html += `
+            <tr class="row-warning">
+              <td colspan="9" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                ${warnings.map(w => `⚠️ ${w}`).join('<br>')}
+              </td>
+            </tr>
+          `;
+        }
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+      document.getElementById('listTitle').textContent = 
+        `${filteredApplications.length} Pending Application${filteredApplications.length !== 1 ? 's' : ''}`;
+    }
+
+    function hasWarnings(app) {
+      return getWarnings(app).length > 0;
+    }
+
+    function getWarnings(app) {
+      const warnings = [];
+      if (app.monthlyLimitExceeded) warnings.push('Monthly limit exceeded');
+      if (app.restGapViolation) warnings.push('Rest gap < 4 hours');
+      if (app.nearingLimit) warnings.push('Nearing monthly limit (90h+)');
+      return warnings;
+    }
+
+    function toggleSelectAll() {
+      const selectAll = document.getElementById('selectAll').checked;
+      const checkboxes = document.querySelectorAll('.app-checkbox:not([disabled])');
+      
+      checkboxes.forEach(cb => {
+        cb.checked = selectAll;
+        if (selectAll) {
+          selectedApplications.add(cb.dataset.id);
+        } else {
+          selectedApplications.delete(cb.dataset.id);
+        }
+      });
+      
+      updateSelection();
+    }
+
+    function updateSelection() {
+      selectedApplications.clear();
+      document.querySelectorAll('.app-checkbox:checked').forEach(cb => {
+        selectedApplications.add(cb.dataset.id);
+      });
+
+      const count = selectedApplications.size;
+      document.getElementById('selectedCount').textContent = count;
+      document.getElementById('bulkApproveBtn').disabled = count === 0;
+    }
+
+    function viewApplication(applicationId) {
+      const app = allApplications.find(a => a.applicationId === applicationId);
+      if (!app) return;
+
+      currentApplication = app;
+      const warnings = getWarnings(app);
+
+      let modalHtml = `
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Application ID</label>
+            <div><strong>${app.applicationId}</strong></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <div>${getStatusBadge(app.status)}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Staff Name</label>
+            <div><strong>${app.staffName}</strong></div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Staff ID</label>
+            <div>${app.staffId}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Team</label>
+            <div>${app.teamName}</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Submitted</label>
+            <div>${formatDateTime(app.createdDate)}</div>
+          </div>
+        </div>
+
+        <hr>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">OT Date</label>
+            <div>
+              ${formatDate(app.otDate)}
+              ${app.isPublicHoliday ? '<span class="badge" style="background: #9C27B0; margin-left: 0.5rem;">⭐ Public Holiday</span>' : ''}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Time Period</label>
+            <div>${formatTime(app.startTime)} - ${formatTime(app.endTime)}</div>
+          </div>
+        </div>
+
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label class="form-label">Total OT Hours</label>
+            <div>
+              <strong style="font-size: 1.5rem; color: #4285F4;">${app.totalOTHours}h</strong>
+              ${app.isPublicHoliday ? '<div style="color: #9C27B0; font-size: 0.875rem;">2x multiplier applied</div>' : ''}
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Claim Type</label>
+            <div><strong>${app.claimType}</strong></div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Monthly OT Summary</label>
+          <div style="background: #F5F5F5; padding: 1rem; border-radius: 4px;">
+            <div>Current Month Total: <strong>${app.currentMonthOT || 0}h</strong> / ${APP_CONFIG.maxOTHours}h</div>
+            <div style="margin-top: 0.5rem;">After Approval: <strong>${(app.currentMonthOT || 0) + app.totalOTHours}h</strong></div>
+            <div class="progress mt-1">
+              <div class="progress-bar ${getProgressClass(calculateProgress((app.currentMonthOT || 0) + app.totalOTHours, APP_CONFIG.maxOTHours))}" 
+                   style="width: ${calculateProgress((app.currentMonthOT || 0) + app.totalOTHours, APP_CONFIG.maxOTHours)}%">
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      if (warnings.length > 0) {
+        modalHtml += `
+          <div class="alert alert-warning">
+            <strong>⚠️ Warnings:</strong><br>
+            ${warnings.map(w => `• ${w}`).join('<br>')}
+          </div>
+        `;
+      }
+
+      modalHtml += `
+        <div class="form-group">
+          <label for="reviewRemarks" class="form-label">Remarks (Optional)</label>
+          <textarea id="reviewRemarks" class="form-control" rows="3" placeholder="Add remarks for approval/rejection..."></textarea>
+        </div>
+      `;
+
+      document.getElementById('modalBody').innerHTML = modalHtml;
+      showModal('reviewModal');
+    }
+
+    function approveApplication() {
+      if (!currentApplication) return;
+
+      const remarks = document.getElementById('reviewRemarks').value;
+
+      showLoading();
+      google.script.run
+        .withSuccessHandler(onActionComplete)
+        .withFailureHandler(handleApiError)
+        .apiApproveApplication(currentApplication.applicationId, remarks);
+    }
+
+    function rejectApplication() {
+      if (!currentApplication) return;
+
+      const remarks = document.getElementById('reviewRemarks').value;
+      if (!remarks || remarks.trim() === '') {
+        showToast('Please provide remarks for rejection', 'error');
+        return;
+      }
+
+      showLoading();
+      google.script.run
+        .withSuccessHandler(onActionComplete)
+        .withFailureHandler(handleApiError)
+        .apiRejectApplication(currentApplication.applicationId, remarks);
+    }
+
+    function bulkApprove() {
+      if (selectedApplications.size === 0) return;
+
+      if (!confirm(`Approve ${selectedApplications.size} application(s)?`)) return;
+
+      showLoading();
+      const appIds = Array.from(selectedApplications);
+      
+      // Process approvals sequentially
+      processApprovals(appIds, 0);
+    }
+
+    function processApprovals(appIds, index) {
+      if (index >= appIds.length) {
+        showToast(`✓ Approved ${appIds.length} application(s)`, 'success');
+        selectedApplications.clear();
+        loadApplications();
+        return;
+      }
+
+      google.script.run
+        .withSuccessHandler(() => processApprovals(appIds, index + 1))
+        .withFailureHandler((error) => {
+          showToast(`Error approving ${appIds[index]}: ${error.message}`, 'error');
+          processApprovals(appIds, index + 1);
+        })
+        .apiApproveApplication(appIds[index], 'Bulk approved');
+    }
+
+    function onActionComplete(result) {
+      hideModal('reviewModal');
+      if (result.success) {
+        showToast('✓ Action completed successfully', 'success');
+        loadApplications();
+      } else {
+        showToast(result.message, 'error');
+      }
+    }
+
+    function exportToCSV() {
+      exportTableToCSV(filteredApplications, 'pending-applications');
+    }
+  </script>
+</body>
+</html>

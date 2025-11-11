@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Management Dashboard - OT Management System</title>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="navbar-container">
+      <div class="navbar-brand">
+        📊 OT Management System - Management
+      </div>
+      <ul class="navbar-nav">
+        <li><a href="?page=dashboard" class="nav-link active">Dashboard</a></li>
+        <li><a href="?page=reports" class="nav-link">Reports</a></li>
+      </ul>
+      <div style="color: white;">
+        👤 <?= userData.staffName ?>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="container">
+    <!-- Welcome -->
+    <div class="card">
+      <div class="card-header">
+        📈 Management Overview
+      </div>
+      <div class="card-body">
+        <h2><?= userData.staffName ?></h2>
+        <p style="color: #666; margin: 0;">Management Dashboard - Real-time OT Analytics</p>
+      </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="grid grid-4">
+      <div class="stat-card" style="background: linear-gradient(135deg, #2196F3 0%, #4285F4 100%); color: white;">
+        <div class="stat-value" id="totalOTHours">0h</div>
+        <div class="stat-label">Total OT Hours</div>
+        <div class="stat-change" id="totalOTChange">This Month</div>
+      </div>
+
+      <div class="stat-card" style="background: linear-gradient(135deg, #4CAF50 0%, #8BC34A 100%); color: white;">
+        <div class="stat-value" id="totalStaff">0</div>
+        <div class="stat-label">Active Staff</div>
+        <div class="stat-change" id="staffChange">With OT</div>
+      </div>
+
+      <div class="stat-card" style="background: linear-gradient(135deg, #FF9800 0%, #FFC107 100%); color: white;">
+        <div class="stat-value" id="pendingApprovals">0</div>
+        <div class="stat-label">Pending Approvals</div>
+        <div class="stat-change">Awaiting TL</div>
+      </div>
+
+      <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0 0%, #673AB7 100%); color: white;">
+        <div class="stat-value" id="totalCost">RM 0</div>
+        <div class="stat-label">Total OT Cost</div>
+        <div class="stat-change" id="costChange">This Month</div>
+      </div>
+    </div>
+
+    <!-- Month Filter -->
+    <div class="card">
+      <div class="card-body">
+        <div class="grid grid-2">
+          <div class="form-group">
+            <label for="monthFilter" class="form-label">Select Month</label>
+            <input type="month" id="monthFilter" class="form-control" onchange="loadDashboard()">
+          </div>
+          <div style="display: flex; align-items: flex-end; gap: 0.5rem;">
+            <button class="btn btn-secondary" onclick="loadDashboard()">🔄 Refresh</button>
+            <button class="btn btn-secondary" onclick="exportReport()">📥 Export Report</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Warning Alerts -->
+    <div id="alertsContainer"></div>
+
+    <!-- Department Breakdown -->
+    <div class="card">
+      <div class="card-header">
+        🏢 Department Breakdown
+      </div>
+      <div class="card-body">
+        <div id="departmentBreakdown">
+          <p style="text-align: center; color: #666;">Loading department data...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top OT Staff -->
+    <div class="card">
+      <div class="card-header">
+        👥 Top 10 Staff by OT Hours
+      </div>
+      <div class="card-body">
+        <div id="topStaff">
+          <p style="text-align: center; color: #666;">Loading staff data...</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="card">
+      <div class="card-header">
+        📋 Recent Activities
+      </div>
+      <div class="card-body">
+        <div id="recentActivity">
+          <p style="text-align: center; color: #666;">Loading activity log...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <?!= include('Scripts'); ?>
+
+  <script>
+    let dashboardData = null;
+    let selectedMonth = '';
+
+    // Load on page load
+    window.onload = function() {
+      setDefaultMonth();
+      loadDashboard();
+    };
+
+    function setDefaultMonth() {
+      const today = new Date();
+      const monthValue = today.toISOString().substring(0, 7);
+      document.getElementById('monthFilter').value = monthValue;
+      selectedMonth = monthValue;
+    }
+
+    function loadDashboard() {
+      selectedMonth = document.getElementById('monthFilter').value;
+      showLoading();
+
+      // Note: This would need a new API endpoint - apiGetManagementDashboard()
+      // For now, we'll use mock data structure
+      google.script.run
+        .withSuccessHandler(onDashboardLoaded)
+        .withFailureHandler(handleApiError)
+        .apiGetManagementDashboard();
+    }
+
+    function onDashboardLoaded(result) {
+      if (!result.success) {
+        showError(result.message);
+        return;
+      }
+
+      dashboardData = result.data;
+
+      // Update metrics
+      updateMetrics(dashboardData);
+
+      // Show alerts if needed
+      showAlerts(dashboardData);
+
+      // Render department breakdown
+      renderDepartmentBreakdown(dashboardData.departments || []);
+
+      // Render top staff
+      renderTopStaff(dashboardData.topStaff || []);
+
+      // Render recent activity
+      renderRecentActivity(dashboardData.recentActivity || []);
+    }
+
+    function updateMetrics(data) {
+      document.getElementById('totalOTHours').textContent = (data.totalOTHours || 0) + 'h';
+      document.getElementById('totalStaff').textContent = data.activeStaffCount || 0;
+      document.getElementById('pendingApprovals').textContent = data.pendingApprovals || 0;
+      document.getElementById('totalCost').textContent = 'RM ' + ((data.totalCost || 0).toFixed(2));
+
+      // Change indicators
+      const otChange = data.otHoursChange || 0;
+      const changeText = otChange >= 0 ? `+${otChange}h from last month` : `${otChange}h from last month`;
+      document.getElementById('totalOTChange').textContent = changeText;
+
+      document.getElementById('staffChange').textContent = `${data.activeStaffCount || 0} staff with OT`;
+      document.getElementById('costChange').textContent = `Avg: RM ${((data.totalCost || 0) / (data.activeStaffCount || 1)).toFixed(2)} per staff`;
+    }
+
+    function showAlerts(data) {
+      const alertsContainer = document.getElementById('alertsContainer');
+      let alerts = [];
+
+      // Check for staff exceeding limits
+      if (data.staffExceedingLimit && data.staffExceedingLimit.length > 0) {
+        alerts.push({
+          type: 'danger',
+          message: `⚠️ <strong>${data.staffExceedingLimit.length} staff</strong> have exceeded the ${APP_CONFIG.maxOTHours}h monthly limit`
+        });
+      }
+
+      // Check for high pending approvals
+      if (data.pendingApprovals > 20) {
+        alerts.push({
+          type: 'warning',
+          message: `⚠️ <strong>${data.pendingApprovals} pending approvals</strong> - consider reviewing approval workflows`
+        });
+      }
+
+      // Check for budget
+      if (data.budgetExceeded) {
+        alerts.push({
+          type: 'danger',
+          message: `💰 <strong>Budget Alert:</strong> OT costs have exceeded budget by RM ${data.budgetOverage.toFixed(2)}`
+        });
+      }
+
+      if (alerts.length === 0) {
+        alertsContainer.innerHTML = '';
+        return;
+      }
+
+      let html = '<div class="grid grid-1">';
+      alerts.forEach(alert => {
+        html += `
+          <div class="alert alert-${alert.type}">
+            ${alert.message}
+          </div>
+        `;
+      });
+      html += '</div>';
+
+      alertsContainer.innerHTML = html;
+    }
+
+    function renderDepartmentBreakdown(departments) {
+      const container = document.getElementById('departmentBreakdown');
+
+      if (departments.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #666;">No department data available</p>';
+        return;
+      }
+
+      let html = `
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Department/Team</th>
+              <th>Staff Count</th>
+              <th>Total OT Hours</th>
+              <th>Average per Staff</th>
+              <th>Total Cost</th>
+              <th>Pending</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      departments.forEach(dept => {
+        const avgHours = dept.staffCount > 0 ? (dept.totalHours / dept.staffCount).toFixed(1) : 0;
+
+        html += `
+          <tr>
+            <td><strong>${dept.teamName}</strong></td>
+            <td>${dept.staffCount}</td>
+            <td><strong style="font-size: 1.1rem;">${dept.totalHours}h</strong></td>
+            <td>${avgHours}h</td>
+            <td>RM ${dept.totalCost.toFixed(2)}</td>
+            <td><span class="badge" style="background: #FF9800;">${dept.pendingCount || 0}</span></td>
+          </tr>
+        `;
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function renderTopStaff(staff) {
+      const container = document.getElementById('topStaff');
+
+      if (staff.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #666;">No staff data available</p>';
+        return;
+      }
+
+      let html = `
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Staff</th>
+              <th>Team</th>
+              <th>Total OT Hours</th>
+              <th>Limit Status</th>
+              <th>Money Claim</th>
+              <th>Leave Days</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      staff.slice(0, 10).forEach((member, index) => {
+        const progress = calculateProgress(member.totalOT || 0, APP_CONFIG.maxOTHours);
+        const progressClass = getProgressClass(progress);
+        const rankEmoji = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+
+        html += `
+          <tr>
+            <td style="text-align: center; font-size: 1.5rem;">${rankEmoji || (index + 1)}</td>
+            <td>
+              <strong>${member.staffName}</strong><br>
+              <span style="font-size: 0.875rem; color: #666;">${member.staffId}</span>
+            </td>
+            <td>${member.teamName}</td>
+            <td><strong style="font-size: 1.1rem;">${member.totalOT || 0}h</strong></td>
+            <td>
+              <div class="progress" style="height: 20px; min-width: 120px;">
+                <div class="progress-bar ${progressClass}" style="width: ${progress}%">
+                  ${Math.round(progress)}%
+                </div>
+              </div>
+            </td>
+            <td>RM ${(member.moneyClaim || 0).toFixed(2)}</td>
+            <td>${(member.leaveDays || 0).toFixed(1)} days</td>
+          </tr>
+        `;
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function renderRecentActivity(activities) {
+      const container = document.getElementById('recentActivity');
+
+      if (activities.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #666;">No recent activity</p>';
+        return;
+      }
+
+      let html = '<div style="max-height: 400px; overflow-y: auto;">';
+
+      activities.slice(0, 20).forEach(activity => {
+        const iconMap = {
+          'Application Submitted': '📝',
+          'Application Approved': '✅',
+          'Application Rejected': '❌',
+          'OT Created': '➕',
+          'OT Updated': '✏️'
+        };
+
+        const icon = iconMap[activity.action] || '📋';
+
+        html += `
+          <div style="padding: 0.75rem; border-bottom: 1px solid #eee; display: flex; gap: 1rem; align-items: start;">
+            <div style="font-size: 1.5rem;">${icon}</div>
+            <div style="flex: 1;">
+              <div><strong>${activity.action}</strong></div>
+              <div style="font-size: 0.875rem; color: #666;">
+                ${activity.staffName} - ${activity.details}
+              </div>
+              <div style="font-size: 0.75rem; color: #999; margin-top: 0.25rem;">
+                ${formatDateTime(activity.timestamp)}
+              </div>
+            </div>
+          </div>
+        `;
+      });
+
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function exportReport() {
+      showToast('Exporting management report...', 'info');
+      
+      // This would generate a comprehensive CSV or PDF report
+      // For now, show a placeholder
+      setTimeout(() => {
+        showToast('Report export feature coming soon!', 'info');
+      }, 1000);
+    }
+  </script>
+</body>
+</html>
