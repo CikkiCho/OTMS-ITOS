@@ -17,7 +17,7 @@
  */
 const CONFIG = {
   // Spreadsheet ID - UPDATE THIS!
-  SPREADSHEET_ID: 'YOUR_SPREADSHEET_ID_HERE',
+  SPREADSHEET_ID: '1WDdJbJawv6Etlha6v6uisO4uLGfyiCvxcAag6DSE_g4',
   
   // Sheet names
   SHEETS: {
@@ -65,11 +65,10 @@ const CONFIG = {
     RED: 'Red'           // 104+ hours (at limit)
   },
   
-  // Staff roles
+  // Staff roles (simplified structure)
   ROLES: {
-    STAFF: 'Staff',
-    TEAM_LEADER: 'Team Leader',
-    MANAGEMENT: 'Management'
+    STAFF: 'Staff',           // Regular employees who apply for OT
+    MANAGEMENT: 'Management'  // Team Leaders + Management (can approve OT and view reports)
   },
   
   // Activity log actions

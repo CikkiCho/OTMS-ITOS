@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Staff Portal - OT Management System</title>
+  <?!= include('UI-Common'); ?>
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="navbar-container">
+      <div class="navbar-brand">📊 OT Management System</div>
+      <ul class="navbar-nav">
+        <li><a href="#dashboard" class="nav-link active" onclick="showSection('dashboard')">Dashboard</a></li>
+        <li><a href="#apply" class="nav-link" onclick="showSection('apply')">Apply OT</a></li>
+        <li><a href="#history" class="nav-link" onclick="showSection('history')">History</a></li>
+      </ul>
+      <div style="color: white;">👤 <?= userData.staffName ?></div>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- ============================================ -->
+    <!-- SECTION 1: DASHBOARD -->
+    <!-- ============================================ -->
+    <div id="section-dashboard" class="section">
+      <div class="card">
+        <h2>Welcome, <span id="staffName"><?= userData.staffName ?></span>! 👋</h2>
+        <p style="color: #666;">Team: <span id="teamName"><?= userData.team ?></span></p>
+      </div>
+
+      <!-- OT Summary Stats -->
+      <div class="grid grid-3 mb-3">
+        <div class="stat-card blue">
+          <div class="stat-label">Total OT This Month</div>
+          <div class="stat-value" id="totalHours">0</div>
+          <div class="stat-label">hours / 104 hours</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Money Claim</div>
+          <div class="stat-value" id="moneyHours">0</div>
+          <div class="stat-label">hours</div>
+        </div>
+        <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0 0%, #7B1FA2 100%);">
+          <div class="stat-label">Leave Earned</div>
+          <div class="stat-value" id="leaveDays">0</div>
+          <div class="stat-label">days</div>
+        </div>
+      </div>
+
+      <!-- OT Limit Progress -->
+      <div class="card">
+        <div class="card-header">
+          <span>Monthly OT Limit</span>
+          <span id="limitStatus"></span>
+        </div>
+        <div class="card-body">
+          <div class="progress">
+            <div class="progress-bar" id="progressBar" style="width: 0%">
+              <span id="progressText">0 / 104 hours</span>
+            </div>
+          </div>
+          <p class="form-text mt-2" id="remainingHours"></p>
+        </div>
+      </div>
+
+      <!-- Application Status -->
+      <div class="card">
+        <div class="card-header">
+          <span>Application Status</span>
+          <button class="btn btn-primary" onclick="showSection('apply')">➕ New Application</button>
+        </div>
+        <div class="card-body">
+          <div class="grid grid-2">
+            <div style="text-align: center; padding: 1rem; background: #FFF3CD; border-radius: 8px;">
+              <div style="font-size: 2rem; font-weight: bold; color: #856404;" id="pendingCount">0</div>
+              <div style="color: #856404;">Pending Approval</div>
+            </div>
+            <div style="text-align: center; padding: 1rem; background: #D4EDDA; border-radius: 8px;">
+              <div style="font-size: 2rem; font-weight: bold; color: #155724;" id="approvedCount">0</div>
+              <div style="color: #155724;">Approved</div>
+            </div>
+            <div style="text-align: center; padding: 1rem; background: #F8D7DA; border-radius: 8px;">
+              <div style="font-size: 2rem; font-weight: bold; color: #721C24;" id="rejectedCount">0</div>
+              <div style="color: #721C24;">Rejected</div>
+            </div>
+            <div style="text-align: center; padding: 1rem; background: #E2E3E5; border-radius: 8px;">
+              <div style="font-size: 2rem; font-weight: bold; color: #383D41;" id="draftCount">0</div>
+              <div style="color: #383D41;">Draft</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent Applications -->
+      <div class="card">
+        <div class="card-header">
+          <span>Recent OT Applications</span>
+          <button class="btn btn-secondary" onclick="showSection('history')">View All</button>
+        </div>
+        <div class="card-body">
+          <div id="recentApplications"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION 2: APPLY OT -->
+    <!-- ============================================ -->
+    <div id="section-apply" class="section hidden">
+      <div class="card">
+        <div class="card-header">
+          <span>📝 Apply for Overtime</span>
+          <button class="btn btn-secondary" onclick="showSection('dashboard')">← Back to Dashboard</button>
+        </div>
+        <div class="card-body">
+          <div id="successMessage" class="hidden"></div>
+          <div id="errorMessage" class="hidden"></div>
+          <div id="warningMessage" class="hidden"></div>
+
+          <form id="otApplicationForm">
+            <div class="form-group">
+              <label for="otDate" class="form-label required">OT Date</label>
+              <input type="date" id="otDate" name="otDate" class="form-control" required onchange="checkPublicHoliday()">
+              <div class="form-text">Select the date you worked overtime</div>
+              <div id="holidayNotice" class="hidden"></div>
+            </div>
+
+            <div class="form-group">
+              <label for="startTime" class="form-label required">Start Time</label>
+              <input type="time" id="startTime" name="startTime" class="form-control" required onchange="calculateHours()">
+            </div>
+
+            <div class="form-group">
+              <label for="endTime" class="form-label required">End Time</label>
+              <input type="time" id="endTime" name="endTime" class="form-control" required onchange="calculateHours()">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Calculated OT Hours</label>
+              <div style="background: #f9f9f9; padding: 1rem; border-radius: 4px; border: 1px solid #ddd;">
+                <div style="font-size: 1.5rem; font-weight: bold; color: #4285F4;">
+                  <span id="calculatedHours">0</span> hours
+                  <span id="multiplierBadge" class="hidden" style="font-size: 1rem; color: #9C27B0;">× 2 (Public Holiday)</span>
+                </div>
+                <div style="font-size: 0.875rem; color: #666; margin-top: 0.5rem;" id="hoursBreakdown"></div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="claimType" class="form-label required">Claim Type</label>
+              <select id="claimType" name="claimType" class="form-control" required onchange="updateLeaveDays()">
+                <option value="">Select claim type</option>
+                <option value="Money">Money</option>
+                <option value="Leave">Leave (Off-in-Lieu)</option>
+              </select>
+            </div>
+
+            <div id="leaveDaysDisplay" class="hidden form-group">
+              <label class="form-label">Leave Days Earned</label>
+              <div style="background: #E8F5E9; padding: 1rem; border-radius: 4px;">
+                <div style="font-size: 1.5rem; font-weight: bold; color: #4CAF50;">
+                  <span id="leaveDaysValue">0</span> days
+                </div>
+                <div class="form-text">Based on 6 OT hours = 1 leave day</div>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <button type="submit" class="btn btn-primary" id="submitBtn">
+                📤 Submit Application
+              </button>
+              <button type="button" class="btn btn-secondary" onclick="resetForm()">
+                🔄 Reset
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SECTION 3: HISTORY -->
+    <!-- ============================================ -->
+    <div id="section-history" class="section hidden">
+      <div class="card">
+        <div class="card-header">
+          <span>📋 My OT Application History</span>
+          <button class="btn btn-secondary" onclick="showSection('dashboard')">← Back to Dashboard</button>
+        </div>
+        <div class="card-body">
+          <div class="grid grid-4">
+            <div class="stat-card blue">
+              <div class="stat-value" id="hist-total">0</div>
+              <div class="stat-label">Total Applications</div>
+            </div>
+            <div class="stat-card" style="background: #FFC107; color: white;">
+              <div class="stat-value" id="hist-pending">0</div>
+              <div class="stat-label">Pending</div>
+            </div>
+            <div class="stat-card green">
+              <div class="stat-value" id="hist-approved">0</div>
+              <div class="stat-label">Approved</div>
+            </div>
+            <div class="stat-card" style="background: #F44336; color: white;">
+              <div class="stat-value" id="hist-rejected">0</div>
+              <div class="stat-label">Rejected</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="card">
+        <div class="card-body">
+          <div class="grid grid-3">
+            <div class="form-group">
+              <label for="monthFilter" class="form-label">Filter by Month</label>
+              <input type="month" id="monthFilter" class="form-control" onchange="applyFilters()">
+            </div>
+            <div class="form-group">
+              <label for="statusFilter" class="form-label">Filter by Status</label>
+              <select id="statusFilter" class="form-control" onchange="applyFilters()">
+                <option value="">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="Approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+                <option value="Draft">Draft</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="claimFilter" class="form-label">Filter by Claim Type</label>
+              <select id="claimFilter" class="form-control" onchange="applyFilters()">
+                <option value="">All Types</option>
+                <option value="Money">Money</option>
+                <option value="Leave">Leave</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Applications List -->
+      <div class="card">
+        <div class="card-body">
+          <div id="applicationsList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let dashboardData = null;
+    let allApplications = [];
+
+    // Page initialization
+    window.onload = function() {
+      loadDashboard();
+    };
+
+    // Navigation
+    function showSection(section) {
+      document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
+      document.getElementById('section-' + section).classList.remove('hidden');
+      
+      document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+      event.target.classList.add('active');
+      
+      if (section === 'history') {
+        loadHistory();
+      }
+    }
+
+    // Load Dashboard
+    function loadDashboard() {
+      google.script.run
+        .withSuccessHandler(onDashboardLoaded)
+        .withFailureHandler(showError)
+        .apiGetStaffDashboard();
+    }
+
+    function onDashboardLoaded(data) {
+      if (!data.success) {
+        showError(data.message);
+        return;
+      }
+
+      dashboardData = data;
+      const summary = data.summary || {
+        totalOTHours: 0,
+        moneyClaimHours: 0,
+        leaveClaimHours: 0,
+        leaveDaysEarned: 0,
+        status: 'Green'
+      };
+
+      document.getElementById('totalHours').textContent = summary.totalOTHours;
+      document.getElementById('moneyHours').textContent = summary.moneyClaimHours;
+      document.getElementById('leaveDays').textContent = summary.leaveDaysEarned;
+
+      const maxHours = 104;
+      const progress = (summary.totalOTHours / maxHours) * 100;
+      const progressBar = document.getElementById('progressBar');
+      progressBar.style.width = Math.min(progress, 100) + '%';
+      progressBar.className = 'progress-bar ' + (progress >= 90 ? 'red' : progress >= 75 ? 'amber' : 'green');
+      document.getElementById('progressText').textContent = `${summary.totalOTHours} / ${maxHours} hours`;
+
+      document.getElementById('limitStatus').innerHTML = `<span class="badge badge-${summary.status.toLowerCase()}">${summary.status}</span>`;
+      
+      const remaining = data.limits.remainingHours;
+      document.getElementById('remainingHours').textContent = `You have ${remaining} hours remaining this month.`;
+
+      document.getElementById('pendingCount').textContent = data.statusCounts.pending;
+      document.getElementById('approvedCount').textContent = data.statusCounts.approved;
+      document.getElementById('rejectedCount').textContent = data.statusCounts.rejected;
+      document.getElementById('draftCount').textContent = data.statusCounts.draft;
+
+      allApplications = data.applications || [];
+      displayRecentApplications();
+    }
+
+    function displayRecentApplications() {
+      const container = document.getElementById('recentApplications');
+      if (!allApplications || allApplications.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #666; padding: 2rem;">No applications yet.</p>';
+        return;
+      }
+
+      const recent = allApplications.slice(0, 5);
+      let html = '<div class="table-responsive"><table class="table">';
+      html += '<thead><tr><th>Date</th><th>Time</th><th>Hours</th><th>Type</th><th>Status</th></tr></thead><tbody>';
+
+      recent.forEach(app => {
+        html += `<tr>`;
+        html += `<td>${formatDate(app.otDate)}</td>`;
+        html += `<td>${app.startTime} - ${app.endTime}</td>`;
+        html += `<td><strong>${app.totalHours}h</strong></td>`;
+        html += `<td>${app.claimType}</td>`;
+        html += `<td>${getStatusBadge(app.status)}</td>`;
+        html += `</tr>`;
+      });
+
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+    }
+
+    // OT Application Form
+    document.getElementById('otApplicationForm').addEventListener('submit', function(e) {
+      e.preventDefault();
+      submitApplication();
+    });
+
+    function submitApplication() {
+      const formData = {
+        otDate: document.getElementById('otDate').value,
+        startTime: document.getElementById('startTime').value + ':00',
+        endTime: document.getElementById('endTime').value + ':00',
+        claimType: document.getElementById('claimType').value
+      };
+
+      document.getElementById('submitBtn').disabled = true;
+      document.getElementById('submitBtn').textContent = '⏳ Submitting...';
+
+      google.script.run
+        .withSuccessHandler(onSubmitSuccess)
+        .withFailureHandler(onSubmitError)
+        .apiSubmitOTApplication(formData);
+    }
+
+    function onSubmitSuccess(result) {
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('submitBtn').textContent = '📤 Submit Application';
+
+      if (result.success) {
+        showSuccess('✅ OT application submitted successfully!');
+        document.getElementById('otApplicationForm').reset();
+        loadDashboard();
+      } else {
+        showError(result.message + (result.errors ? '<br>' + result.errors.join('<br>') : ''));
+      }
+    }
+
+    function onSubmitError(error) {
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('submitBtn').textContent = '📤 Submit Application';
+      showError('Failed to submit application: ' + error.message);
+    }
+
+    // History Section
+    function loadHistory() {
+      if (!allApplications) return;
+      
+      document.getElementById('hist-total').textContent = allApplications.length;
+      document.getElementById('hist-pending').textContent = allApplications.filter(a => a.status === 'Pending').length;
+      document.getElementById('hist-approved').textContent = allApplications.filter(a => a.status === 'Approved').length;
+      document.getElementById('hist-rejected').textContent = allApplications.filter(a => a.status === 'Rejected').length;
+      
+      displayApplicationsList(allApplications);
+    }
+
+    function displayApplicationsList(apps) {
+      const container = document.getElementById('applicationsList');
+      if (!apps || apps.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #666;">No applications found.</p>';
+        return;
+      }
+
+      let html = '<div class="table-responsive"><table class="table">';
+      html += '<thead><tr><th>Date</th><th>Time</th><th>Hours</th><th>Type</th><th>Status</th><th>Submitted</th></tr></thead><tbody>';
+
+      apps.forEach(app => {
+        html += `<tr>`;
+        html += `<td>${formatDate(app.otDate)}</td>`;
+        html += `<td>${app.startTime} - ${app.endTime}</td>`;
+        html += `<td><strong>${app.totalHours}h</strong>${app.isPublicHoliday ? ' ⭐' : ''}</td>`;
+        html += `<td>${app.claimType}</td>`;
+        html += `<td>${getStatusBadge(app.status)}</td>`;
+        html += `<td>${formatDateTime(app.submittedDate)}</td>`;
+        html += `</tr>`;
+      });
+
+      html += '</tbody></table></div>';
+      container.innerHTML = html;
+    }
+
+    function applyFilters() {
+      const monthFilter = document.getElementById('monthFilter').value;
+      const statusFilter = document.getElementById('statusFilter').value;
+      const claimFilter = document.getElementById('claimFilter').value;
+
+      let filtered = allApplications;
+
+      if (monthFilter) {
+        filtered = filtered.filter(app => {
+          const appMonth = formatDate(app.otDate).substring(0, 7);
+          return appMonth === monthFilter;
+        });
+      }
+
+      if (statusFilter) {
+        filtered = filtered.filter(app => app.status === statusFilter);
+      }
+
+      if (claimFilter) {
+        filtered = filtered.filter(app => app.claimType === claimFilter);
+      }
+
+      displayApplicationsList(filtered);
+    }
+
+    // Utility Functions
+    function formatDate(date) {
+      return new Date(date).toISOString().split('T')[0];
+    }
+
+    function formatDateTime(date) {
+      return new Date(date).toLocaleString();
+    }
+
+    function getStatusBadge(status) {
+      const badges = {
+        'Pending': '<span class="badge badge-warning">Pending</span>',
+        'Approved': '<span class="badge badge-success">Approved</span>',
+        'Rejected': '<span class="badge badge-danger">Rejected</span>',
+        'Draft': '<span class="badge badge-secondary">Draft</span>'
+      };
+      return badges[status] || status;
+    }
+
+    function showSuccess(message) {
+      const elem = document.getElementById('successMessage');
+      elem.innerHTML = `<div class="alert alert-success">${message}</div>`;
+      elem.classList.remove('hidden');
+      setTimeout(() => elem.classList.add('hidden'), 5000);
+    }
+
+    function showError(message) {
+      const elem = document.getElementById('errorMessage');
+      elem.innerHTML = `<div class="alert alert-danger">${message}</div>`;
+      elem.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>

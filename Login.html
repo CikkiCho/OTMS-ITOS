@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - OT Management System</title>
+  <?!= include('UI-Common'); ?>
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: var(--color-bg-light);
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 450px;
+      padding: 2rem;
+    }
+
+    .login-card {
+      background: var(--color-bg);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      padding: 3rem 2.5rem;
+      border: 1px solid var(--color-border);
+    }
+
+    .login-header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    .login-logo {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+    }
+
+    .login-title {
+      font-size: 1.75rem;
+      font-weight: 800;
+      color: var(--color-text);
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.5px;
+    }
+
+    .login-subtitle {
+      color: var(--color-text-light);
+      font-size: 0.95rem;
+    }
+
+    .login-form {
+      margin-top: 2rem;
+    }
+
+    .login-button {
+      width: 100%;
+      padding: 1rem;
+      font-size: 1rem;
+      font-weight: 700;
+      margin-top: 1.5rem;
+    }
+
+    .login-footer {
+      text-align: center;
+      margin-top: 2rem;
+      padding-top: 2rem;
+      border-top: 1px solid var(--color-border);
+      color: var(--color-text-light);
+      font-size: 0.875rem;
+    }
+
+    .alert {
+      margin-bottom: 1.5rem;
+    }
+
+    .detected-user {
+      background: var(--color-bg-dark);
+      padding: 1rem;
+      border-radius: var(--radius-sm);
+      margin-bottom: 1.5rem;
+      text-align: center;
+    }
+
+    .detected-user-email {
+      font-weight: 700;
+      color: var(--color-text);
+      font-size: 1.1rem;
+    }
+
+    .detected-user-label {
+      color: var(--color-text-light);
+      font-size: 0.875rem;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container">
+    <div class="login-card">
+      <div class="login-header">
+        <div class="login-logo">📊</div>
+        <h1 class="login-title">OT Management System</h1>
+        <p class="login-subtitle">Enter your email to access the system</p>
+      </div>
+
+      <div id="errorAlert" class="alert alert-danger hidden"></div>
+      <div id="successAlert" class="alert alert-success hidden"></div>
+
+      <div id="detectedUserBox" class="hidden">
+        <div class="detected-user">
+          <div class="detected-user-label">Currently signed in as:</div>
+          <div class="detected-user-email" id="detectedEmail"></div>
+        </div>
+        <button class="btn btn-primary login-button" onclick="loginWithDetectedUser()">
+          Continue as <span id="detectedEmailShort"></span>
+        </button>
+        <div style="text-align: center; margin-top: 1rem; color: var(--color-text-light);">
+          or
+        </div>
+      </div>
+
+      <form class="login-form" id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label for="email" class="form-label required">Email Address</label>
+          <input 
+            type="email" 
+            id="email" 
+            name="email" 
+            class="form-control" 
+            placeholder="your.email@company.com"
+            required
+            autocomplete="email"
+          >
+          <div class="form-text">Enter your registered company email</div>
+        </div>
+
+        <button type="submit" class="btn btn-primary login-button" id="loginBtn">
+          🔐 Sign In
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <p>🔒 Secure authentication via email verification</p>
+        <p style="margin-top: 0.5rem;">Contact your administrator if you need access</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let detectedUserEmail = '';
+
+    window.onload = function() {
+      // Try to get the currently logged-in Google user
+      google.script.run
+        .withSuccessHandler(onDetectedUser)
+        .withFailureHandler(onDetectedUserError)
+        .apiGetCurrentUser();
+    };
+
+    function onDetectedUser(result) {
+      if (result.success && result.data && result.data.email) {
+        detectedUserEmail = result.data.email;
+        document.getElementById('detectedEmail').textContent = detectedUserEmail;
+        document.getElementById('detectedEmailShort').textContent = detectedUserEmail.split('@')[0];
+        document.getElementById('detectedUserBox').classList.remove('hidden');
+        
+        // Pre-fill the email field
+        document.getElementById('email').value = detectedUserEmail;
+      }
+    }
+
+    function onDetectedUserError(error) {
+      console.log('Could not detect user:', error);
+      // User not logged in via Google, show manual entry form
+    }
+
+    function loginWithDetectedUser() {
+      if (detectedUserEmail) {
+        document.getElementById('email').value = detectedUserEmail;
+        document.getElementById('loginForm').dispatchEvent(new Event('submit'));
+      }
+    }
+
+    function handleLogin(event) {
+      event.preventDefault();
+      
+      const email = document.getElementById('email').value.trim();
+      
+      if (!email) {
+        showError('Please enter your email address');
+        return;
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        showError('Please enter a valid email address');
+        return;
+      }
+
+      // Disable button and show loading
+      const loginBtn = document.getElementById('loginBtn');
+      loginBtn.disabled = true;
+      loginBtn.textContent = '🔄 Verifying...';
+
+      // Call backend to validate email
+      google.script.run
+        .withSuccessHandler(onLoginSuccess)
+        .withFailureHandler(onLoginError)
+        .apiLoginWithEmail(email);
+    }
+
+    function onLoginSuccess(result) {
+      if (result.success) {
+        showSuccess('Login successful! Redirecting...');
+        
+        // Redirect to appropriate dashboard based on role
+        setTimeout(() => {
+          const email = encodeURIComponent(result.data.email);
+          window.location.href = '?page=dashboard&email=' + email;
+        }, 1000);
+      } else {
+        showError(result.message || 'Login failed. Please try again.');
+        resetLoginButton();
+      }
+    }
+
+    function onLoginError(error) {
+      showError('System error: ' + error.message);
+      resetLoginButton();
+    }
+
+    function resetLoginButton() {
+      const loginBtn = document.getElementById('loginBtn');
+      loginBtn.disabled = false;
+      loginBtn.textContent = '🔐 Sign In';
+    }
+
+    function showError(message) {
+      const errorAlert = document.getElementById('errorAlert');
+      errorAlert.textContent = '⚠️ ' + message;
+      errorAlert.classList.remove('hidden');
+      document.getElementById('successAlert').classList.add('hidden');
+    }
+
+    function showSuccess(message) {
+      const successAlert = document.getElementById('successAlert');
+      successAlert.textContent = '✅ ' + message;
+      successAlert.classList.remove('hidden');
+      document.getElementById('errorAlert').classList.add('hidden');
+    }
+  </script>
+</body>
+</html>

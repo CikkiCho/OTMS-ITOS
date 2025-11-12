@@ -18,30 +18,38 @@
  */
 function doGet(e) {
   try {
-    // Get user email
-    const userEmail = Session.getActiveUser().getEmail();
+    // Check if email is passed as parameter (from login page)
+    const userEmail = e.parameter.email || '';
     
-    // Check if user exists in system
+    // ALWAYS show login page if no email parameter
+    // This forces users to login via the Login page
+    if (!userEmail) {
+      return showLoginPage();
+    }
+    
+    // Email provided, validate the user
     const staffData = getStaffByEmail(userEmail);
     
     if (!staffData) {
       return showUnauthorizedPage(userEmail);
     }
     
+    // Check if user is active
+    if (staffData.status !== 'Active') {
+      return showUnauthorizedPage(userEmail);
+    }
+    
     // Get page parameter (default: dashboard)
     const page = e.parameter.page || 'dashboard';
     
-    // Route to appropriate page based on role
-    if (staffData.role === CONFIG.ROLES.TEAM_LEADER) {
-      return serveTeamLeaderPage(page, staffData);
-    } else if (staffData.role === CONFIG.ROLES.STAFF) {
-      return serveStaffPage(page, staffData);
-    } else if (staffData.role === CONFIG.ROLES.MANAGEMENT) {
+    // Route to appropriate page based on role (simplified: Staff or Management)
+    if (staffData.role === CONFIG.ROLES.MANAGEMENT) {
+      // Management role includes Team Leaders - show management dashboard with approval features
       return serveManagementPage(page, staffData);
+    } else {
+      // Default: Staff dashboard
+      return serveStaffPage(page, staffData);
     }
-    
-    // Default: staff dashboard
-    return serveStaffPage('dashboard', staffData);
     
   } catch (error) {
     Logger.log('doGet error: ' + error.toString());
@@ -50,32 +58,20 @@ function doGet(e) {
 }
 
 /**
- * Serve staff pages
+ * Serve staff pages (UPDATED: Now uses merged UI-Staff.html)
  * 
  * @param {string} page - Page name
  * @param {Object} staffData - Staff data
  * @returns {HtmlOutput} HTML page
  */
 function serveStaffPage(page, staffData) {
-  let template;
-  
-  switch(page) {
-    case 'dashboard':
-      template = HtmlService.createTemplateFromFile('StaffDashboard');
-      break;
-    case 'apply':
-      template = HtmlService.createTemplateFromFile('OTApplicationForm');
-      break;
-    case 'history':
-      template = HtmlService.createTemplateFromFile('ApplicationHistory');
-      break;
-    default:
-      template = HtmlService.createTemplateFromFile('StaffDashboard');
-  }
+  // All staff pages now served from single UI-Staff.html file
+  const template = HtmlService.createTemplateFromFile('UI-Staff');
   
   // Pass data to template
   template.userData = staffData;
   template.userEmail = staffData.email;
+  template.currentPage = page || 'dashboard';
   
   return template.evaluate()
     .setTitle('OT Management System - ' + staffData.staffName)
@@ -84,61 +80,43 @@ function serveStaffPage(page, staffData) {
 }
 
 /**
- * Serve team leader pages
- * 
- * @param {string} page - Page name
- * @param {Object} staffData - Staff data
- * @returns {HtmlOutput} HTML page
- */
-function serveTeamLeaderPage(page, staffData) {
-  let template;
-  
-  switch(page) {
-    case 'tl-dashboard':
-    case 'dashboard':
-      template = HtmlService.createTemplateFromFile('TeamLeaderDashboard');
-      break;
-    case 'approval-queue':
-    case 'approvals':
-      template = HtmlService.createTemplateFromFile('ApprovalQueue');
-      break;
-    case 'team-summary':
-    case 'team':
-      template = HtmlService.createTemplateFromFile('TeamSummary');
-      break;
-    case 'apply':
-      template = HtmlService.createTemplateFromFile('OTApplicationForm');
-      break;
-    case 'history':
-      template = HtmlService.createTemplateFromFile('ApplicationHistory');
-      break;
-    default:
-      template = HtmlService.createTemplateFromFile('TeamLeaderDashboard');
-  }
-  
-  template.userData = staffData;
-  template.userEmail = staffData.email;
-  
-  return template.evaluate()
-    .setTitle('OT Management System - Team Leader')
-    .setFaviconUrl('https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
-
-/**
  * Serve management pages
+ * Management role includes Team Leaders - provides approval features + analytics
  * 
  * @param {string} page - Page name
  * @param {Object} staffData - Staff data
  * @returns {HtmlOutput} HTML page
  */
 function serveManagementPage(page, staffData) {
-  const template = HtmlService.createTemplateFromFile('ManagementDashboard');
+  let templateName = 'ManagementDashboard';
+  
+  // Route to specific pages for Management
+  if (page === 'approvals' || page === 'approval-queue') {
+    templateName = 'ApprovalQueue';
+  } else if (page === 'team-summary') {
+    templateName = 'TeamSummary';
+  }
+  
+  const template = HtmlService.createTemplateFromFile(templateName);
   template.userData = staffData;
   template.userEmail = staffData.email;
   
   return template.evaluate()
     .setTitle('OT Management System - Management')
+    .setFaviconUrl('https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * Show login page
+ * 
+ * @returns {HtmlOutput} HTML page
+ */
+function showLoginPage() {
+  const template = HtmlService.createTemplateFromFile('Login');
+  
+  return template.evaluate()
+    .setTitle('Login - OT Management System')
     .setFaviconUrl('https://ssl.gstatic.com/docs/spreadsheets/favicon3.ico')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -175,17 +153,79 @@ function showErrorPage(errorMessage) {
 
 /**
  * Include HTML files (for modular design)
+ * UPDATED: Now includes merged files (UI-Common, etc.)
  * 
  * @param {string} filename - File name
  * @returns {string} HTML content
  */
 function include(filename) {
-  return HtmlService.createHtmlOutputFromFile(filename).getContent();
+  // Map old filenames to new merged files
+  const fileMap = {
+    'Styles': 'UI-Common',
+    'Scripts': 'UI-Common',
+    'UI-Common': 'UI-Common'
+  };
+  
+  const actualFile = fileMap[filename] || filename;
+  return HtmlService.createHtmlOutputFromFile(actualFile).getContent();
 }
 
 // =============================================================================
 // API ENDPOINTS (called from frontend via google.script.run)
 // =============================================================================
+
+/**
+ * API: Login with email (validate against Staff_Master)
+ * 
+ * @param {string} email - User email
+ * @returns {Object} Result with user data
+ */
+function apiLoginWithEmail(email) {
+  try {
+    if (!email) {
+      return {
+        success: false,
+        message: 'Email is required'
+      };
+    }
+
+    // Check if user exists in Staff_Master
+    const staffData = getStaffByEmail(email);
+    
+    if (!staffData) {
+      return {
+        success: false,
+        message: 'Email not found. Please contact your administrator to register your email in the system.'
+      };
+    }
+
+    // Check if user is active
+    if (staffData.status !== 'Active') {
+      return {
+        success: false,
+        message: 'Your account is not active. Please contact your administrator.'
+      };
+    }
+
+    // Login successful
+    return {
+      success: true,
+      message: 'Login successful',
+      data: {
+        email: staffData.email,
+        staffName: staffData.staffName,
+        role: staffData.role,
+        teamName: staffData.teamName
+      }
+    };
+  } catch (error) {
+    Logger.log('apiLoginWithEmail error: ' + error.toString());
+    return {
+      success: false,
+      message: 'System error: ' + error.toString()
+    };
+  }
+}
 
 /**
  * API: Get current user data
@@ -194,13 +234,31 @@ function include(filename) {
  */
 function apiGetCurrentUser() {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
+    // Try to get from Google session for auto-detection on login page
+    let userEmail = '';
+    try {
+      userEmail = Session.getActiveUser().getEmail();
+    } catch (err) {
+      // No Google session available
+      return {
+        success: false,
+        message: 'No user session found'
+      };
+    }
+    
     const staffData = getStaffByEmail(userEmail);
     
-    return {
-      success: true,
-      data: staffData
-    };
+    if (staffData) {
+      return {
+        success: true,
+        data: staffData
+      };
+    } else {
+      return {
+        success: false,
+        message: 'User not found in system'
+      };
+    }
   } catch (error) {
     return {
       success: false,
@@ -212,12 +270,15 @@ function apiGetCurrentUser() {
 /**
  * API: Get staff dashboard data
  * 
+ * @param {string} email - User email
  * @returns {Object} Dashboard data
  */
-function apiGetStaffDashboard() {
+function apiGetStaffDashboard(email) {
   try {
-    const userEmail = Session.getActiveUser().getEmail();
-    return getStaffOTDashboard(userEmail);
+    if (!email) {
+      return { success: false, message: 'Email is required' };
+    }
+    return getStaffOTDashboard(email);
   } catch (error) {
     return {
       success: false,

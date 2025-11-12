@@ -10,8 +10,87 @@
  */
 
 /**
+ * Initialize application - Check if tables exist and create only if missing
+ * This function is safe to run multiple times and won't delete existing data
+ * Run this automatically on app load or manually to ensure all tables exist
+ */
+function initializeApp() {
+  try {
+    Logger.log('Starting OT Management System initialization...');
+    
+    const ss = getSpreadsheet();
+    const sheetsCreated = [];
+    const sheetsExisted = [];
+    
+    // Check and create each sheet only if it doesn't exist
+    if (!ss.getSheetByName(CONFIG.SHEETS.OT_APPLICATIONS)) {
+      createOTApplicationsSheet(ss, false);
+      sheetsCreated.push('OT_Applications');
+    } else {
+      sheetsExisted.push('OT_Applications');
+    }
+    
+    if (!ss.getSheetByName(CONFIG.SHEETS.OT_SUMMARY)) {
+      createOTMonthlySummarySheet(ss, false);
+      sheetsCreated.push('OT_Monthly_Summary');
+    } else {
+      sheetsExisted.push('OT_Monthly_Summary');
+    }
+    
+    if (!ss.getSheetByName(CONFIG.SHEETS.STAFF_MASTER)) {
+      createStaffMasterSheet(ss, false);
+      sheetsCreated.push('Staff_Master');
+    } else {
+      sheetsExisted.push('Staff_Master');
+    }
+    
+    if (!ss.getSheetByName(CONFIG.SHEETS.ATTENDANCE_LOG)) {
+      createAttendanceLogSheet(ss, false);
+      sheetsCreated.push('Attendance_Log');
+    } else {
+      sheetsExisted.push('Attendance_Log');
+    }
+    
+    if (!ss.getSheetByName(CONFIG.SHEETS.PUBLIC_HOLIDAYS)) {
+      createPublicHolidaysSheet(ss, false);
+      sheetsCreated.push('Public_Holidays');
+    } else {
+      sheetsExisted.push('Public_Holidays');
+    }
+    
+    if (!ss.getSheetByName(CONFIG.SHEETS.ACTIVITY_LOG)) {
+      createActivityLogSheet(ss, false);
+      sheetsCreated.push('Activity_Log');
+    } else {
+      sheetsExisted.push('Activity_Log');
+    }
+    
+    Logger.log('OT Management System initialization completed successfully!');
+    Logger.log('Sheets created: ' + (sheetsCreated.length > 0 ? sheetsCreated.join(', ') : 'None'));
+    Logger.log('Sheets already existed: ' + (sheetsExisted.length > 0 ? sheetsExisted.join(', ') : 'None'));
+    
+    const message = 'Initialization Complete!\n\n' +
+      (sheetsCreated.length > 0 ? 'Sheets created:\n• ' + sheetsCreated.join('\n• ') + '\n\n' : '') +
+      (sheetsExisted.length > 0 ? 'Sheets already existed:\n• ' + sheetsExisted.join('\n• ') + '\n\n' : '') +
+      (sheetsCreated.length > 0 ? 'Next steps:\n1. Populate Staff_Master with your staff data\n2. Add Public_Holidays dates\n3. Import Attendance_Log data' : 'All sheets are ready!');
+    
+    return { 
+      success: true, 
+      message: 'System initialization completed',
+      sheetsCreated: sheetsCreated,
+      sheetsExisted: sheetsExisted
+    };
+    
+  } catch (error) {
+    Logger.log('initializeApp error: ' + error.toString());
+    return { success: false, message: error.toString() };
+  }
+}
+
+/**
  * Main setup function - Run this ONCE to initialize the entire system
  * Creates all required sheets with headers and basic formatting
+ * WARNING: This will DELETE existing sheets and recreate them
  */
 function setupOTManagementSystem() {
   try {
@@ -60,14 +139,15 @@ function setupOTManagementSystem() {
 /**
  * Create OT_Applications sheet with all required columns
  * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {boolean} deleteIfExists - If true, deletes existing sheet before creating. Default true.
  */
-function createOTApplicationsSheet(ss) {
+function createOTApplicationsSheet(ss, deleteIfExists = true) {
   const sheetName = CONFIG.SHEETS.OT_APPLICATIONS;
   Logger.log('Creating sheet: ' + sheetName);
   
   // Delete if exists (for re-initialization)
   const existingSheet = ss.getSheetByName(sheetName);
-  if (existingSheet) {
+  if (existingSheet && deleteIfExists) {
     ss.deleteSheet(existingSheet);
     Logger.log('Deleted existing sheet: ' + sheetName);
   }
@@ -152,13 +232,14 @@ function createOTApplicationsSheet(ss) {
 /**
  * Create OT_Monthly_Summary sheet
  * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {boolean} deleteIfExists - If true, deletes existing sheet before creating. Default true.
  */
-function createOTMonthlySummarySheet(ss) {
+function createOTMonthlySummarySheet(ss, deleteIfExists = true) {
   const sheetName = CONFIG.SHEETS.OT_SUMMARY;
   Logger.log('Creating sheet: ' + sheetName);
   
   const existingSheet = ss.getSheetByName(sheetName);
-  if (existingSheet) {
+  if (existingSheet && deleteIfExists) {
     ss.deleteSheet(existingSheet);
   }
   
@@ -209,13 +290,14 @@ function createOTMonthlySummarySheet(ss) {
 /**
  * Create Staff_Master sheet
  * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {boolean} deleteIfExists - If true, deletes existing sheet before creating. Default true.
  */
-function createStaffMasterSheet(ss) {
+function createStaffMasterSheet(ss, deleteIfExists = true) {
   const sheetName = CONFIG.SHEETS.STAFF_MASTER;
   Logger.log('Creating sheet: ' + sheetName);
   
   const existingSheet = ss.getSheetByName(sheetName);
-  if (existingSheet) {
+  if (existingSheet && deleteIfExists) {
     ss.deleteSheet(existingSheet);
   }
   
@@ -279,13 +361,14 @@ function createStaffMasterSheet(ss) {
 /**
  * Create Attendance_Log sheet
  * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {boolean} deleteIfExists - If true, deletes existing sheet before creating. Default true.
  */
-function createAttendanceLogSheet(ss) {
+function createAttendanceLogSheet(ss, deleteIfExists = true) {
   const sheetName = CONFIG.SHEETS.ATTENDANCE_LOG;
   Logger.log('Creating sheet: ' + sheetName);
   
   const existingSheet = ss.getSheetByName(sheetName);
-  if (existingSheet) {
+  if (existingSheet && deleteIfExists) {
     ss.deleteSheet(existingSheet);
   }
   
@@ -346,13 +429,14 @@ function createAttendanceLogSheet(ss) {
 /**
  * Create Public_Holidays sheet
  * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {boolean} deleteIfExists - If true, deletes existing sheet before creating. Default true.
  */
-function createPublicHolidaysSheet(ss) {
+function createPublicHolidaysSheet(ss, deleteIfExists = true) {
   const sheetName = CONFIG.SHEETS.PUBLIC_HOLIDAYS;
   Logger.log('Creating sheet: ' + sheetName);
   
   const existingSheet = ss.getSheetByName(sheetName);
-  if (existingSheet) {
+  if (existingSheet && deleteIfExists) {
     ss.deleteSheet(existingSheet);
   }
   
@@ -410,13 +494,14 @@ function createPublicHolidaysSheet(ss) {
 /**
  * Create Activity_Log sheet
  * @param {Spreadsheet} ss - The spreadsheet object
+ * @param {boolean} deleteIfExists - If true, deletes existing sheet before creating. Default true.
  */
-function createActivityLogSheet(ss) {
+function createActivityLogSheet(ss, deleteIfExists = true) {
   const sheetName = CONFIG.SHEETS.ACTIVITY_LOG;
   Logger.log('Creating sheet: ' + sheetName);
   
   const existingSheet = ss.getSheetByName(sheetName);
-  if (existingSheet) {
+  if (existingSheet && deleteIfExists) {
     ss.deleteSheet(existingSheet);
   }
   
